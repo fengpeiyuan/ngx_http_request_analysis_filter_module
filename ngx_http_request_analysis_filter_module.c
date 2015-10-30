@@ -44,11 +44,11 @@ typedef struct {
 typedef struct {
     ngx_int_t bucket_idx[DICT_IDX_SIZE];
     ngx_int_t last_used_bucket;
-    ngx_http_request_analysis_url_dict_bucket_item bucket[DICT_BUCKET_SIZE];
+    ngx_http_request_analysis_url_dict_bucket_item url_bucket_arr[DICT_BUCKET_SIZE];
 } ngx_http_request_analysis_url_dict;
 
 typedef struct {
-    ngx_http_request_analysis_stat_request stat_request_arr[3][DICT_BUCKET_SIZE];
+    ngx_http_request_analysis_stat_request stat_bucket_arr[3][DICT_BUCKET_SIZE];
     ngx_int_t pid;
 } ngx_http_request_analysis_stat_buffer;
 
@@ -253,18 +253,18 @@ ngx_http_request_status_handler(ngx_http_request_t *r){
         for (wn = 0; wn < worker_processes; wn++) {
             ngx_http_request_analysis_stat_buffer *sb = stat_ctx->stat_shm->stat_buffer + wn;
             for (loop = 0; loop < DICT_BUCKET_SIZE; loop++) {
-                if (sb->stat_request_arr[old_bno][loop].total_request <= 0)
+                if (sb->stat_bucket_arr[old_bno][loop].total_request <= 0)
                 	continue;
-                sb->stat_request_arr[2][loop].total_request += sb->stat_request_arr[old_bno][loop].total_request;
-                sb->stat_request_arr[2][loop].max_delay < sb->stat_request_arr[old_bno][loop].max_delay ?(sb->stat_request_arr[2][loop].max_delay) = sb->stat_request_arr[old_bno][loop].max_delay : 0;
-                sb->stat_request_arr[2][loop].critical_total_request += sb->stat_request_arr[old_bno][loop].critical_total_request;
+                sb->stat_bucket_arr[2][loop].total_request += sb->stat_bucket_arr[old_bno][loop].total_request;
+                sb->stat_bucket_arr[2][loop].max_delay < sb->stat_bucket_arr[old_bno][loop].max_delay ?(sb->stat_bucket_arr[2][loop].max_delay) = sb->stat_bucket_arr[old_bno][loop].max_delay : 0;
+                sb->stat_bucket_arr[2][loop].critical_total_request += sb->stat_bucket_arr[old_bno][loop].critical_total_request;
                 ngx_int_t status_code;
                 for (status_code = 0; status_code < 600; status_code++) {
-                    sb->stat_request_arr[2][loop].status[status_code] += sb->stat_request_arr[old_bno][loop].status[status_code];
+                    sb->stat_bucket_arr[2][loop].status[status_code] += sb->stat_bucket_arr[old_bno][loop].status[status_code];
                 }
                 ngx_int_t d;
                 for (d = 0; d < 2000; d++) {
-                    sb->stat_request_arr[2][loop].delay[d] += sb->stat_request_arr[old_bno][loop].delay[d];
+                    sb->stat_bucket_arr[2][loop].delay[d] += sb->stat_bucket_arr[old_bno][loop].delay[d];
                 }
             }
         }
@@ -274,7 +274,7 @@ ngx_http_request_status_handler(ngx_http_request_t *r){
     b->last = ngx_sprintf(b->last, "url\t\t\ttotal\tmax\ttp99\ttp999\tcritical\tstatus\n");
     ngx_int_t url_idx;
     for (url_idx = 0; url_idx < DICT_BUCKET_SIZE; url_idx++) {
-        if (strlen(url_ctx->url_shm->url_dict.bucket[url_idx].data) == 0) {
+        if (strlen(url_ctx->url_shm->url_dict.url_bucket_arr[url_idx].data) == 0) {
             continue;
         }
         ngx_int_t total_request_per_url = 0;
@@ -287,12 +287,12 @@ ngx_http_request_status_handler(ngx_http_request_t *r){
         ngx_int_t status[600] = {0};
         for (wn = 0; wn < worker_processes; wn++) {
             ngx_http_request_analysis_stat_buffer *sb = stat_ctx->stat_shm->stat_buffer + wn;
-            total_request_per_url += sb->stat_request_arr[stat_bno][url_idx].total_request;
-            serious_delay_request_per_url += sb->stat_request_arr[stat_bno][url_idx].critical_total_request;
-            sb->stat_request_arr[stat_bno][url_idx].max_delay > max_delay ? max_delay = sb->stat_request_arr[stat_bno][url_idx].max_delay : 0;
+            total_request_per_url += sb->stat_bucket_arr[stat_bno][url_idx].total_request;
+            serious_delay_request_per_url += sb->stat_bucket_arr[stat_bno][url_idx].critical_total_request;
+            sb->stat_bucket_arr[stat_bno][url_idx].max_delay > max_delay ? max_delay = sb->stat_bucket_arr[stat_bno][url_idx].max_delay : 0;
             ngx_int_t code;
             for (code = 0; code < 600; code++) {
-                status[code] += sb->stat_request_arr[stat_bno][url_idx].status[code];
+                status[code] += sb->stat_bucket_arr[stat_bno][url_idx].status[code];
             }
         }
         tp99_request_per_url = total_request_per_url * 0.99;
@@ -304,7 +304,7 @@ ngx_http_request_status_handler(ngx_http_request_t *r){
         for (d = 0; d < 2000 && !tp999_finished ; d++) {
             for (wn = 0; wn < worker_processes; wn++) {
                 ngx_http_request_analysis_stat_buffer *sb = stat_ctx->stat_shm->stat_buffer + wn;
-                total_delay_request_per_url += sb->stat_request_arr[stat_bno][url_idx].delay[d];
+                total_delay_request_per_url += sb->stat_bucket_arr[stat_bno][url_idx].delay[d];
                 if (total_delay_request_per_url >= tp99_request_per_url && !tp99_finished) {
                 	tp99_per_url = d;
                     tp99_finished = 1;
@@ -332,12 +332,12 @@ ngx_http_request_status_handler(ngx_http_request_t *r){
             }
         }
         status_buf[ngx_strlen(status_buf) - 1] = '\0';
-        b->last = ngx_sprintf(b->last, "%s\t\t\t%i\t%i\t%s\t%s\t%i\t%s\n",url_ctx->url_shm->url_dict.bucket[url_idx].data,total_request_per_url, max_delay, stp99, stp999, serious_delay_request_per_url, status_buf);
+        b->last = ngx_sprintf(b->last, "%s\t\t\t%i\t%i\t%s\t%s\t%i\t%s\n",url_ctx->url_shm->url_dict.url_bucket_arr[url_idx].data,total_request_per_url, max_delay, stp99, stp999, serious_delay_request_per_url, status_buf);
     }
     ngx_int_t wp;
     for (wp = 0; wp < worker_processes; wp++) {
         ngx_http_request_analysis_stat_buffer *sb = stat_ctx->stat_shm->stat_buffer + wp;
-        ngx_memset(sb->stat_request_arr[old_bno], 0,DICT_BUCKET_SIZE * sizeof(ngx_http_request_analysis_stat_request));
+        ngx_memset(sb->stat_bucket_arr[old_bno], 0,DICT_BUCKET_SIZE * sizeof(ngx_http_request_analysis_stat_request));
     }
     ngx_shmtx_unlock(&((ngx_slab_pool_t*)(racf->stat_lock_shm_zone->shm.addr))->mutex);
     b->memory = 1;
@@ -403,7 +403,7 @@ ngx_http_request_analysis_header_filter(ngx_http_request_t *r){
     }
 
     if (idx < 0) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,"the url bucket full filled, some url_queue met condition cann't be counted!");
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,"the url url_bucket_arr full filled, some url_queue met condition cann't be counted!");
         return ngx_http_next_header_filter(r);
     }
     
@@ -453,8 +453,8 @@ ngx_http_request_analysis_header_filter(ngx_http_request_t *r){
     }
 
     ngx_http_request_analysis_stat_buffer *curr_sb = stat_ctx->stat_shm->stat_buffer + racf->stat_buffer_pos;
-    curr_sb->stat_request_arr[stat_ctx->stat_shm->current_slots][idx].total_request++;
-    curr_sb->stat_request_arr[stat_ctx->stat_shm->current_slots][idx].status[r->headers_out.status]++;
+    curr_sb->stat_bucket_arr[stat_ctx->stat_shm->current_slots][idx].total_request++;
+    curr_sb->stat_bucket_arr[stat_ctx->stat_shm->current_slots][idx].status[r->headers_out.status]++;
 
     ngx_gettimeofday(&tv);
     now_sec = tv.tv_sec;
@@ -463,13 +463,13 @@ ngx_http_request_analysis_header_filter(ngx_http_request_t *r){
     req_msec = r->start_msec;
     delay_msec = ((now_sec * 1000) + now_msec) - ((req_sec * 1000) + req_msec);
     if (delay_msec >= 2000) {
-    	curr_sb->stat_request_arr[stat_ctx->stat_shm->current_slots][idx].critical_total_request++;
+    	curr_sb->stat_bucket_arr[stat_ctx->stat_shm->current_slots][idx].critical_total_request++;
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,"--- serious delay happend, %i ms consumed --- ", delay_msec);
         return ngx_http_next_header_filter(r);
     }
-    curr_sb->stat_request_arr[stat_ctx->stat_shm->current_slots][idx].delay[delay_msec]++;
-    curr_sb->stat_request_arr[stat_ctx->stat_shm->current_slots][idx].url_bucket_pos = idx;
-    delay_msec > curr_sb->stat_request_arr[stat_ctx->stat_shm->current_slots][idx].max_delay ? curr_sb->stat_request_arr[stat_ctx->stat_shm->current_slots][idx].max_delay = delay_msec : 0;
+    curr_sb->stat_bucket_arr[stat_ctx->stat_shm->current_slots][idx].delay[delay_msec]++;
+    curr_sb->stat_bucket_arr[stat_ctx->stat_shm->current_slots][idx].url_bucket_pos = idx;
+    delay_msec > curr_sb->stat_bucket_arr[stat_ctx->stat_shm->current_slots][idx].max_delay ? curr_sb->stat_bucket_arr[stat_ctx->stat_shm->current_slots][idx].max_delay = delay_msec : 0;
     return ngx_http_next_header_filter(r);
 }
 
@@ -724,7 +724,7 @@ ngx_http_request_analysis_init_url_zone (ngx_shm_zone_t *shm_zone, void *data){
     }
     ctx->url_shm->url_dict.last_used_bucket = -1;
     for (loop = 0; loop < DICT_BUCKET_SIZE; loop++) {
-        ctx->url_shm->url_dict.bucket[loop].next = -1;
+        ctx->url_shm->url_dict.url_bucket_arr[loop].next = -1;
     }
 
     ctx->url_shpool->data = ctx->url_shm;
@@ -790,20 +790,15 @@ ngx_http_request_analysis_init_stat_zone (ngx_shm_zone_t *shm_zone, void *data){
 }
 
 static ngx_int_t
-ngx_http_request_analysis_init_lock_zone (ngx_shm_zone_t *shm_zone, void *data)
-{
-    
+ngx_http_request_analysis_init_lock_zone (ngx_shm_zone_t *shm_zone, void *data){
     ngx_http_request_analysis_lock_ctx_t  *olock = data;
     ngx_http_request_analysis_lock_ctx_t  *lock;
     lock = shm_zone->data;
-
     if (olock) {
         lock->shpool = olock->shpool;
         return NGX_OK;
     }
-
     lock->shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
-
     if (shm_zone->shm.exists) {
         lock->shpool = lock->shpool->data;
         return NGX_OK;
@@ -824,19 +819,19 @@ insert_url_into_dict(ngx_http_request_analysis_url_ctx_t  *ctx, char *url){
         return -1;
     }
     if (idx >= 0) {
-        while (idx >= 0 && strcasecmp(shm->url_dict.bucket[idx].data, url)) {
+        while (idx >= 0 && strcasecmp(shm->url_dict.url_bucket_arr[idx].data, url)) {
             pre_idx = idx;
-            idx = shm->url_dict.bucket[idx].next;
+            idx = shm->url_dict.url_bucket_arr[idx].next;
         }
         if (idx >= 0) {
             return -idx;
         } else {
-            strcpy(shm->url_dict.bucket[++last_used_bucket].data, url);
-            shm->url_dict.bucket[pre_idx].next = last_used_bucket;
+            strcpy(shm->url_dict.url_bucket_arr[++last_used_bucket].data, url);
+            shm->url_dict.url_bucket_arr[pre_idx].next = last_used_bucket;
         }
     } else {
         shm->url_dict.bucket_idx[key] = ++last_used_bucket;
-        strcpy(shm->url_dict.bucket[last_used_bucket].data, url);
+        strcpy(shm->url_dict.url_bucket_arr[last_used_bucket].data, url);
     }
     shm->url_dict.last_used_bucket = last_used_bucket;
     return last_used_bucket;
@@ -850,8 +845,8 @@ search_url_from_dict(ngx_http_request_analysis_url_ctx_t  *ctx, char *url){
     key = ngx_hash_key_lc((u_char *)url, strlen(url)) % DICT_IDX_SIZE;
     ngx_int_t idx = shm->url_dict.bucket_idx[key];
     if (idx >= 0) {
-        while (idx >= 0 && strcasecmp(shm->url_dict.bucket[idx].data, url)) {
-            idx = shm->url_dict.bucket[idx].next;
+        while (idx >= 0 && strcasecmp(shm->url_dict.url_bucket_arr[idx].data, url)) {
+            idx = shm->url_dict.url_bucket_arr[idx].next;
         }
         if (idx >= 0) {
             return idx;
